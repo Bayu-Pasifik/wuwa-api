@@ -174,9 +174,13 @@ Entri tidak ditemukan.
 ## Memperbarui Data
 
 ```bash
-# dari folder wuwa-scrap/
-php wuwa-scraps.php 0 6        # scrape semua artikel -> output/pages.jsonl (bisa dilanjutkan jika terputus)
-
-# dari folder wuwa-scrap/wuwa-api/
-php artisan wuwa:import        # import/upsert ke MySQL
+# dari folder wuwa-api/
+php scraper/wuwa-scraps.php 0 6 --update   # hanya halaman baru/berubah (bandingkan revid) -> ../output/pages.jsonl
+php artisan wuwa:import --prune            # upsert ke MySQL + hapus halaman yang sudah hilang dari wiki
 ```
+
+Opsi scraper:
+
+- tanpa `--update`: hanya halaman baru (page_id belum ada); isi halaman lama tidak diperiksa.
+- `--backfill-revid`: isi `revid` baris lama dari revisi wiki saat ini, tanpa scrape ulang (sekali saja untuk data lama).
+- Scrape penuh dari nol: hapus `output/pages.jsonl`, lalu jalankan tanpa `--update`.

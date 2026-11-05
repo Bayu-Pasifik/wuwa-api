@@ -302,6 +302,28 @@ if (is_file($file)) {
 [$titles, $revs] = all_pages();
 file_put_contents("$outDir/page_ids.json", json_encode(array_keys($titles)));
 
+if (in_array('--backfill-revid', $argv, true)) {
+    // isi revid baris lama dari lastrevid wiki saat ini, tanpa scrape ulang
+    $tmp = "$file.tmp";
+    $in = fopen($file, 'rb');
+    $w = fopen($tmp, 'wb');
+    $filled = 0;
+    while (($line = fgets($in)) !== false) {
+        $r = json_decode($line, true);
+        if ($r && empty($r['revid']) && !empty($revs[$r['page_id']])) {
+            $r['revid'] = $revs[$r['page_id']];
+            $line = json_encode($r, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+            $filled++;
+        }
+        fwrite($w, $line);
+    }
+    fclose($in);
+    fclose($w);
+    rename($tmp, $file);
+    echo "revid diisi untuk $filled baris di $file\n";
+    exit(0);
+}
+
 $queue = [];
 $gone = 0;
 foreach ($titles as $id => $t) {
