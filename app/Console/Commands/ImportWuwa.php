@@ -7,7 +7,9 @@ use Illuminate\Console\Command;
 
 class ImportWuwa extends Command
 {
-    protected $signature = 'wuwa:import {--file= : path pages.jsonl hasil scraper}';
+    protected $signature = 'wuwa:import
+        {--file= : path pages.jsonl hasil scraper}
+        {--prune : hapus baris yang page_id-nya sudah tidak ada di wiki (butuh page_ids.json di folder yang sama)}';
 
     protected $description = 'Import output/pages.jsonl (wuwa-scraps.php) ke MySQL';
 
@@ -15,12 +17,12 @@ class ImportWuwa extends Command
     private static function padTables(array $sections): array
     {
         foreach ($sections as &$sec) {
-            foreach ($sec["tables"] ?? [] as $k => $rows) {
-                $w = max(array_map("count", $rows));
+            foreach ($sec['tables'] ?? [] as $k => $rows) {
+                $w = max(array_map('count', $rows));
                 foreach ($rows as $ri => $row) {
-                    $rows[$ri] = array_pad($row, $w, "");
+                    $rows[$ri] = array_pad($row, $w, '');
                 }
-                $sec["tables"][$k] = $rows;
+                $sec['tables'][$k] = $rows;
             }
         }
 
@@ -32,6 +34,7 @@ class ImportWuwa extends Command
         $file = $this->option('file') ?: base_path('../output/pages.jsonl');
         if (! is_file($file)) {
             $this->error("File tidak ada: $file");
+
             return self::FAILURE;
         }
 
@@ -40,7 +43,7 @@ class ImportWuwa extends Command
         $flush = function () use (&$batch) {
             if ($batch) {
                 WikiEntry::upsert($batch, ['page_id'], [
-                    'type', 'title', 'slug', 'url', 'description', 'image',
+                    'type', 'revid', 'title', 'slug', 'url', 'description', 'image',
                     'infobox', 'sections', 'categories', 'images', 'scraped_at', 'updated_at',
                 ]);
                 $batch = [];
@@ -53,11 +56,12 @@ class ImportWuwa extends Command
             if (! $i) {
                 continue;
             }
-            $i["sections"] = self::padTables($i["sections"] ?? []);
+            $i['sections'] = self::padTables($i['sections'] ?? []);
             $now = now();
             $batch[] = [
                 'type' => $i['type'],
                 'page_id' => $i['page_id'],
+                'revid' => $i['revid'] ?? null,
                 'title' => $i['title'],
                 'slug' => $i['slug'],
                 'url' => $i['url'],
@@ -81,6 +85,30 @@ class ImportWuwa extends Command
         fclose($h);
         $this->newLine();
         $this->info("$n halaman diimport");
+
+        if ($this->option('prune')) {
+            return $this->prune(dirname($file).'/page_ids.json');
+        }
+
+        return self::SUCCESS;
+    }
+
+    /** Hapus baris yang page_id-nya tidak ada lagi di daftar halaman wiki terbaru. */
+    private function prune(string $idsFile): int
+    {
+        $ids = is_file($idsFile) ? json_decode(file_get_contents($idsFile), true) : null;
+        if (! is_array($ids) || $ids === []) {
+            $this->error("Daftar page_id tidak valid, prune dilewati: $idsFile");
+
+            return self::FAILURE;
+        }
+
+        $live = array_flip($ids);
+        $stale = WikiEntry::query()->pluck('page_id')->filter(fn ($id) => ! isset($live[$id]));
+        foreach ($stale->chunk(500) as $chunk) {
+            WikiEntry::whereIn('page_id', $chunk->all())->delete();
+        }
+        $this->info($stale->count().' halaman dihapus (sudah tidak ada di wiki)');
 
         return self::SUCCESS;
     }
